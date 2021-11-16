@@ -36,6 +36,15 @@ func main() {
 		port = "3032"
 	}
 
+	go func() {
+		ticks := 0
+		for {
+			ticks++
+			log.Printf("Ticked %d times", ticks)
+			<-time.Tick(time.Second * 5)
+		}
+	}()
+
 	http.HandleFunc("/timeout", func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(120 * time.Second)
 		_, _ = w.Write([]byte("Woke up"))
