@@ -36,18 +36,25 @@ func main() {
 		port = "3032"
 	}
 
-	go func() {
-		ticks := 0
-		for {
-			ticks++
-			log.Printf("Ticked %d times", ticks)
-			<-time.Tick(time.Second * 5)
-		}
-	}()
+	if strings.ToLower(os.Getenv("ENABLE_TICK")) == "true" {
+		go func() {
+			ticks := 0
+			for {
+				ticks++
+				log.Printf("Ticked %d times\n", ticks)
+
+				<-time.Tick(time.Millisecond * 2000)
+			}
+		}()
+	}
 
 	http.HandleFunc("/timeout", func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(120 * time.Second)
 		_, _ = w.Write([]byte("Woke up"))
+	})
+
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
 	})
 
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +69,7 @@ func main() {
 	http.HandleFunc("/hack", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`
-		<h1>Hack</h1>
+		<h1>Hack</h1a
 <code>
 </code>
 		<script>
@@ -158,7 +165,8 @@ document.querySelector('code').innerHTML = await resp.text();
 		}
 	})
 
-	log.Println("Starting server on port " + port)
+	log.Println("Starting server on port " + port + " at " + time.Now().Format(time.RFC3339))
+	log.Printf("PROCESS ARGUMENTS %#v\n", os.Args)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
