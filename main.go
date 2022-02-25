@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/gorilla/websocket"
+	"github.com/logrusorgru/aurora"
 	"log"
 	"net/http"
 	"net/url"
@@ -31,6 +32,11 @@ var upgrader = websocket.Upgrader{
 }
 
 func main() {
+	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.Black("  BLK  "), aurora.Red("  RED  "), aurora.Green("  GRN  "), aurora.Yellow("  YLW  "), aurora.Blue("  BLU  "), aurora.Magenta("  MGT  "), aurora.Cyan("  CYA  "), aurora.White("  WHT  "))
+	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.BrightBlack("  BLK  "), aurora.BrightRed("  RED  "), aurora.BrightGreen("  GRN  "), aurora.BrightYellow("  YLW  "), aurora.BrightBlue("  BLU  "), aurora.BrightMagenta("  MGT  "), aurora.BrightCyan("  CYA  "), aurora.BrightWhite("  WHT  "))
+	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.BgBlack("  BLK  "), aurora.BgRed("  RED  "), aurora.BgGreen("  GRN  "), aurora.BgYellow("  YLW  "), aurora.BgBlue("  BLU  "), aurora.BgMagenta("  MGT  "), aurora.BgCyan("  CYA  "), aurora.BgWhite("  WHT  "))
+	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.BgBrightBlack("  BLK  "), aurora.BgBrightRed("  RED  "), aurora.BgBrightGreen("  GRN  "), aurora.BgBrightYellow("  YLW  "), aurora.BgBrightBlue("  BLU  "), aurora.BgBrightMagenta("  MGT  "), aurora.BgBrightCyan("  CYA  "), aurora.BgBrightWhite("  WHT  "))
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3032"
@@ -41,9 +47,8 @@ func main() {
 			ticks := 0
 			for {
 				ticks++
-				log.Printf("Ticked %d times\n", ticks)
-
-				<-time.Tick(time.Millisecond * 2000)
+				fmt.Printf("This is number %s tick!\n", aurora.Magenta(fmt.Sprintf("%d", ticks)))
+				<-time.Tick(time.Millisecond * 1000)
 			}
 		}()
 	}
@@ -54,6 +59,33 @@ func main() {
 	})
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	http.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
+		log := r.URL.Query().Get("log")
+		if log == "" {
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(`<form method="GET"><input name="log" autofocus/><button type="submit">Log It!</button></form>`))
+		} else {
+			fmt.Println(log)
+			http.Redirect(w, r, "/log", http.StatusSeeOther)
+		}
+	})
+
+	http.HandleFunc("/printlogs", func(w http.ResponseWriter, r *http.Request) {
+		n, err := strconv.Atoi(r.URL.Query().Get("lines"))
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		t := time.Now()
+		fmt.Printf("%d INCOMING LOGS!\n", t.Unix())
+		for i := 0; i < n; i++ {
+			fmt.Printf("  %d Dummy log line %d\n", t.Unix(), i)
+		}
+
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -144,7 +176,7 @@ document.querySelector('code').innerHTML = await resp.text();
 		// Upgrade our raw HTTP connection to a websocket based one
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Print("Error during connection upgradation:", err)
+			fmt.Print("Error during connection upgradation:", err)
 			return
 		}
 		defer conn.Close()
@@ -153,20 +185,20 @@ document.querySelector('code').innerHTML = await resp.text();
 		for {
 			messageType, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Println("Error during message reading:", err)
+				fmt.Println("Error during message reading:", err)
 				break
 			}
-			log.Printf("Received: %s", message)
+			fmt.Printf("Received: %s", message)
 			err = conn.WriteMessage(messageType, message)
 			if err != nil {
-				log.Println("Error during message writing:", err)
+				fmt.Println("Error during message writing:", err)
 				break
 			}
 		}
 	})
 
-	log.Println("Starting server on port " + port + " at " + time.Now().Format(time.RFC3339))
-	log.Printf("PROCESS ARGUMENTS %#v\n", os.Args)
+	fmt.Println("Starting server on port " + port + " at " + time.Now().Format(time.RFC3339))
+	fmt.Printf("PROCESS ARGUMENTS %#v\n", os.Args)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
