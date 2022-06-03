@@ -255,9 +255,11 @@ document.querySelector('code').innerHTML = await resp.text();
 		}
 	})
 
-	fmt.Println("Starting server on port " + port + " at " + time.Now().Format(time.RFC3339))
-	fmt.Printf("PROCESS ARGUMENTS %#v\n", os.Args)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	if os.Getenv("DISABLE_SERVER") != "true" {
+		fmt.Println("Starting server on port " + port + " at " + time.Now().Format(time.RFC3339))
+		fmt.Printf("PROCESS ARGUMENTS %#v\n", os.Args)
+		log.Fatal(http.ListenAndServe(":"+port, nil))
+	}
 }
 
 // equalASCIIFold returns true if s is equal to t with ASCII case folding as
