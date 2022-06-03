@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/logrusorgru/aurora"
+	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,7 +19,9 @@ import (
 	"unicode/utf8"
 )
 
+var appAvailableDuration time.Duration = 0
 var startTime = time.Now()
+var deployID = startTime.Format(time.RFC3339)
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header["Origin"]
@@ -31,12 +37,61 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+func init() {
+	domain := os.Getenv("RAILWAY_STATIC_URL")
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+		// DualStack: true, // this is deprecated as of go 1.16
+	}
+	// or create your own transport, there's an example on godoc.
+	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	http.DefaultTransport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if strings.Contains(addr, "up.railway-develop.app") {
+			addr = "host.docker.internal:443"
+		}
+		return dialer.DialContext(ctx, network, addr)
+	}
+
+	httpClientBasic := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				if strings.Contains(addr, "up.railway-develop.app") {
+					addr = "host.docker.internal:443"
+				}
+				return dialer.DialContext(ctx, network, addr)
+			},
+		},
+	}
+
+	go func() {
+		for range time.Tick(time.Millisecond * 100) {
+			resp, err := httpClientBasic.Get("https://" + domain)
+			if err != nil {
+				continue
+			}
+			body, err := ioutil.ReadAll(resp.Body)
+			if strings.Contains(string(body), deployID) {
+				break
+			}
+		}
+
+		appAvailableDuration = time.Since(startTime).Truncate(time.Second)
+		fmt.Println(aurora.Bold(fmt.Sprintf("App available in %s", aurora.Yellow(appAvailableDuration))))
+	}()
+}
+
 func main() {
+	fmt.Printf("This is a line\n\nthere should have been an empty line above this.\n")
 	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.Black("  BLK  "), aurora.Red("  RED  "), aurora.Green("  GRN  "), aurora.Yellow("  YLW  "), aurora.Blue("  BLU  "), aurora.Magenta("  MGT  "), aurora.Cyan("  CYA  "), aurora.White("  WHT  "))
 	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.BrightBlack("  BLK  "), aurora.BrightRed("  RED  "), aurora.BrightGreen("  GRN  "), aurora.BrightYellow("  YLW  "), aurora.BrightBlue("  BLU  "), aurora.BrightMagenta("  MGT  "), aurora.BrightCyan("  CYA  "), aurora.BrightWhite("  WHT  "))
 	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.BgBlack("  BLK  "), aurora.BgRed("  RED  "), aurora.BgGreen("  GRN  "), aurora.BgYellow("  YLW  "), aurora.BgBlue("  BLU  "), aurora.BgMagenta("  MGT  "), aurora.BgCyan("  CYA  "), aurora.BgWhite("  WHT  "))
 	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.BgBrightBlack("  BLK  "), aurora.BgBrightRed("  RED  "), aurora.BgBrightGreen("  GRN  "), aurora.BgBrightYellow("  YLW  "), aurora.BgBrightBlue("  BLU  "), aurora.BgBrightMagenta("  MGT  "), aurora.BgBrightCyan("  CYA  "), aurora.BgBrightWhite("  WHT  "))
 
+	fmt.Println("This is a really long line, meant to test out word wrapping for Railway logs. It's actually pretty hard to " +
+		"come up with an example log this long, so it won't be that interesting to read, but that's okay. I hope you enjoyed " +
+		"this boring paragraph of text and that you never have to read it again.")
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3032"
@@ -47,7 +102,7 @@ func main() {
 			ticks := 0
 			for {
 				ticks++
-				fmt.Printf("This is number %s tick!\n", aurora.Magenta(fmt.Sprintf("%d", ticks)))
+				fmt.Printf("This is number %s tick!\n", aurora.Yellow(fmt.Sprintf("%d", ticks)))
 				<-time.Tick(time.Millisecond * 1000)
 			}
 		}()
@@ -63,12 +118,12 @@ func main() {
 	})
 
 	http.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
-		log := r.URL.Query().Get("log")
-		if log == "" {
+		l := r.URL.Query().Get("log")
+		if l == "" {
 			w.Header().Set("Content-Type", "text/html")
 			w.Write([]byte(`<form method="GET"><input name="log" autofocus/><button type="submit">Log It!</button></form>`))
 		} else {
-			fmt.Println(log)
+			fmt.Println(l)
 			http.Redirect(w, r, "/log", http.StatusSeeOther)
 		}
 	})
@@ -101,7 +156,8 @@ func main() {
 	http.HandleFunc("/hack", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`
-		<h1>Hack</h1a
+		
+		<h1>Hack</h1>
 <code>
 </code>
 		<script>
@@ -125,8 +181,8 @@ document.querySelector('code').innerHTML = await resp.text();
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte("<style>body {color:#ccc;background:#222;font-family:sans-serif} td,th {text-align:left;padding-right:0.5rem}</style>"))
-		w.Write([]byte(`
+		fmt.Fprintf(w, "<style>body {color:#ccc;background:#222;font-family:sans-serif} td,th {text-align:left;padding-right:0.5rem} h1 {font-size: 1.8rem;} summary {cursor:pointer;margin-bottom:0.5rem 0;} a {color:#62d3ff;}</style>")
+		fmt.Fprintf(w, `
 			<script>
 				// Create WebSocket connection.
 				const socket = new WebSocket(window.location.protocol.replace('http', 'ws')+'//'+window.location.host+'/websocket');
@@ -142,10 +198,13 @@ document.querySelector('code').innerHTML = await resp.text();
 					document.querySelector('#ws-status').innerHTML = 'OK';
 				});
 			</script>
-		`))
-		w.Write([]byte("<h1>Railway App</h1>"))
-		w.Write([]byte("<h2>Environment</h2>"))
-		w.Write([]byte("<table><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody>"))
+		`)
+		fmt.Fprintf(w, "<h1>Greg's Go Server</h1>")
+		fmt.Fprintf(w, `<p><a href="https://%s" target="_blank">%s</a></p>`, os.Getenv("RAILWAY_STATIC_URL"), os.Getenv("RAILWAY_STATIC_URL"))
+		fmt.Fprintf(w, "<p>Started %s</p>", deployID)
+		fmt.Fprintf(w, "<p>Available in %s</p>", appAvailableDuration.String())
+		fmt.Fprintf(w, "<h2>Environment</h2>")
+		fmt.Fprintf(w, "<details><summary>Show %d Environment Variables</summary><table><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody>", len(os.Environ()))
 		env := os.Environ()
 		sort.Slice(env, func(i, j int) bool {
 			return strings.SplitN(env[i], "=", 2)[0] < strings.SplitN(env[j], "=", 2)[0]
@@ -154,10 +213,10 @@ document.querySelector('code').innerHTML = await resp.text();
 			s := strings.SplitN(e, "=", 2)
 			fmt.Fprintf(w, "<tr><td>$%s</td><td>%s</td></tr>", s[0], s[1])
 		}
-		w.Write([]byte("</tbody></table>"))
+		fmt.Fprintf(w, "</tbody></table></details>")
 
-		w.Write([]byte("<h2>Headers</h2>"))
-		w.Write([]byte("<table><thead><tr><th>Header</th><th>Value</th></tr></thead><tbody>"))
+		fmt.Fprintf(w, "<h2>Headers</h2>")
+		fmt.Fprintf(w, "<details><summary>Show %d Headers</summary><table><thead><tr><th>Header</th><th>Value</th></tr></thead><tbody>", len(r.Header))
 		keys := make([]string, 0)
 		for k := range r.Header {
 			keys = append(keys, k)
@@ -166,17 +225,16 @@ document.querySelector('code').innerHTML = await resp.text();
 		for _, k := range keys {
 			fmt.Fprintf(w, "<tr><td>%s</td><td>%s</td></tr>", k, r.Header.Get(k))
 		}
-		w.Write([]byte("</tbody></table>"))
-		w.Write([]byte("<h2>Websockets</h2>"))
-		w.Write([]byte("<p id=\"ws-status\">Pending</p>"))
-		w.Write([]byte("<p><small>Started " + startTime.Format(time.RFC1123Z) + "</small></p>"))
+		fmt.Fprintf(w, "</tbody></table></details>")
+		fmt.Fprintf(w, "<h2>Websockets</h2>")
+		fmt.Fprintf(w, "<p id=\"ws-status\">Pending</p>")
 	})
 
 	http.HandleFunc("/websocket", func(w http.ResponseWriter, r *http.Request) {
 		// Upgrade our raw HTTP connection to a websocket based one
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			fmt.Print("Error during connection upgradation:", err)
+			fmt.Printf("Error during connection upgradation: %s\n", err)
 			return
 		}
 		defer conn.Close()
@@ -188,7 +246,7 @@ document.querySelector('code').innerHTML = await resp.text();
 				fmt.Println("Error during message reading:", err)
 				break
 			}
-			fmt.Printf("Received: %s", message)
+			fmt.Printf("Received: %s\n", message)
 			err = conn.WriteMessage(messageType, message)
 			if err != nil {
 				fmt.Println("Error during message writing:", err)
