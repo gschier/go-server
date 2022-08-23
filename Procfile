@@ -1,2 +1,2 @@
-web: go run cmd/web/main.go
-worker: go run cmd/worker/main.go
+web: go-server-web
+worker: go-server-worker
