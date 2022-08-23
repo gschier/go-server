@@ -1,3 +1,4 @@
+// Bump #10
 package main
 
 import (
@@ -103,7 +104,7 @@ func main() {
 			for {
 				ticks++
 				fmt.Printf("This is number %s tick!\n", aurora.Yellow(fmt.Sprintf("%d", ticks)))
-				<-time.Tick(time.Millisecond * 1000)
+				<-time.Tick(time.Millisecond * 7000)
 			}
 		}()
 	}
@@ -115,6 +116,31 @@ func main() {
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+	})
+
+	http.HandleFunc("/not-found", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	http.HandleFunc("/panic", func(w http.ResponseWriter, r *http.Request) {
+		panic("Silly Billy")
+	})
+
+	http.HandleFunc("/_health", func(w http.ResponseWriter, r *http.Request) {
+		d := time.Since(startTime)
+		if d < 3*time.Second {
+			panic("HELLO")
+			time.Sleep(8 * time.Second)
+		} else if d < 45*time.Second {
+			time.Sleep(5 * time.Second)
+			w.WriteHeader(http.StatusTeapot)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+
+	http.HandleFunc("/crash", func(w http.ResponseWriter, r *http.Request) {
+		os.Exit(1)
 	})
 
 	http.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +182,6 @@ func main() {
 	http.HandleFunc("/hack", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`
-		
 		<h1>Hack</h1>
 <code>
 </code>
@@ -259,6 +284,9 @@ document.querySelector('code').innerHTML = await resp.text();
 		fmt.Println("Starting server on port " + port + " at " + time.Now().Format(time.RFC3339))
 		fmt.Printf("PROCESS ARGUMENTS %#v\n", os.Args)
 		log.Fatal(http.ListenAndServe(":"+port, nil))
+	} else {
+		fmt.Println("Running Worker")
+		time.Sleep(time.Hour * 1000)
 	}
 }
 
