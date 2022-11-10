@@ -104,7 +104,7 @@ func main() {
 			for {
 				ticks++
 				fmt.Printf("This is number %s tick!\n", aurora.Yellow(fmt.Sprintf("%d", ticks)))
-				<-time.Tick(time.Millisecond * 7000)
+				<-time.Tick(time.Millisecond * 1000)
 			}
 		}()
 	}
@@ -129,7 +129,6 @@ func main() {
 	http.HandleFunc("/_health", func(w http.ResponseWriter, r *http.Request) {
 		d := time.Since(startTime)
 		if d < 3*time.Second {
-			panic("HELLO")
 			time.Sleep(8 * time.Second)
 		} else if d < 45*time.Second {
 			time.Sleep(5 * time.Second)
@@ -206,7 +205,41 @@ document.querySelector('code').innerHTML = await resp.text();
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprintf(w, "<style>body {color:#ccc;background:#222;font-family:sans-serif} td,th {text-align:left;padding-right:0.5rem} h1 {font-size: 1.8rem;} summary {cursor:pointer;margin-bottom:0.5rem 0;} a {color:#62d3ff;}</style>")
+		fmt.Fprintf(w, `<style>
+			body {
+				color: #444;
+				background: #FFF;
+			  	font-family: sans-serif
+			}
+
+			td, th {
+			  	text-align: left;
+			  	padding-right: 0.5rem
+			}
+
+			h1 {
+			  	font-size: 1.8rem;
+			}
+
+			summary {
+			  	cursor: pointer;
+			  	margin-bottom: 0.5rem 0;
+			}
+
+			a {
+				color: #58a0e7;
+			}
+
+			@media (prefers-color-scheme: dark) {
+				body {
+					color: #ccc;
+				  	background: #222;
+			  	}
+				a {
+					color: #62d3ff;
+				}
+			}
+		</style>`)
 		fmt.Fprintf(w, `
 			<script>
 				// Create WebSocket connection.
