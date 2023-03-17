@@ -4,9 +4,11 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/logrusorgru/aurora"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -114,6 +116,18 @@ func main() {
 		_, _ = w.Write([]byte("Woke up"))
 	})
 
+	http.HandleFunc("/sleep", func(w http.ResponseWriter, r *http.Request) {
+		seconds, err := strconv.Atoi(r.URL.Query().Get("seconds"))
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+
+		time.Sleep(time.Duration(seconds) * time.Second)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Slept for " + strconv.Itoa(seconds) + " seconds"))
+	})
+
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -202,6 +216,52 @@ document.querySelector('code').innerHTML = await resp.text();
 `))
 	})
 
+	http.HandleFunc("/websocket", func(w http.ResponseWriter, r *http.Request) {
+		// Upgrade our raw HTTP connection to a websocket based one
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			fmt.Printf("Error during connection upgradation: %s\n", err)
+			return
+		}
+		defer conn.Close()
+
+		// The event loop
+		for {
+			messageType, message, err := conn.ReadMessage()
+			if err != nil {
+				fmt.Println("Error during message reading:", err)
+				break
+			}
+			fmt.Printf("Received: %s\n", message)
+			err = conn.WriteMessage(messageType, message)
+			if err != nil {
+				fmt.Println("Error during message writing:", err)
+				break
+			}
+		}
+	})
+
+	http.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		e := json.NewEncoder(w)
+		e.SetIndent("", "  ")
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", 500)
+			return
+		}
+		err = e.Encode(map[string]interface{}{
+			"url":     r.RequestURI,
+			"method":  r.Method,
+			"headers": r.Header,
+			"body":    string(body),
+		})
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		w.Header().Set("Content-Type", "text/html")
@@ -286,31 +346,6 @@ document.querySelector('code').innerHTML = await resp.text();
 		fmt.Fprintf(w, "</tbody></table></details>")
 		fmt.Fprintf(w, "<h2>Websockets</h2>")
 		fmt.Fprintf(w, "<p id=\"ws-status\">Pending</p>")
-	})
-
-	http.HandleFunc("/websocket", func(w http.ResponseWriter, r *http.Request) {
-		// Upgrade our raw HTTP connection to a websocket based one
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			fmt.Printf("Error during connection upgradation: %s\n", err)
-			return
-		}
-		defer conn.Close()
-
-		// The event loop
-		for {
-			messageType, message, err := conn.ReadMessage()
-			if err != nil {
-				fmt.Println("Error during message reading:", err)
-				break
-			}
-			fmt.Printf("Received: %s\n", message)
-			err = conn.WriteMessage(messageType, message)
-			if err != nil {
-				fmt.Println("Error during message writing:", err)
-				break
-			}
-		}
 	})
 
 	if os.Getenv("DISABLE_SERVER") != "true" {
