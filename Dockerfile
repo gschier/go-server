@@ -1,4 +1,4 @@
-FROM golang:alpine as app-builder
+FROM golang:1.21 as app-builder
 WORKDIR /go/src/app
 COPY . .
 RUN echo "Cache break counter: 7"

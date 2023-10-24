@@ -1,4 +1,3 @@
-// Bump #10
 package main
 
 import (
@@ -9,18 +8,23 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/logrusorgru/aurora"
 	"io"
-	"io/ioutil"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
+
+var logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	Level: slog.LevelDebug,
+}))
 
 var appAvailableDuration time.Duration = 0
 var startTime = time.Now()
@@ -70,11 +74,11 @@ func init() {
 
 	go func() {
 		for range time.Tick(time.Millisecond * 100) {
-			resp, err := httpClientBasic.Get("https://" + domain)
+			resp, err := httpClientBasic.Get("https://" + domain);
 			if err != nil {
 				continue
 			}
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if strings.Contains(string(body), deployID) {
 				break
 			}
@@ -85,12 +89,31 @@ func init() {
 	}()
 }
 
+var errLog = log.New(os.Stderr, "", 0)
+
 func main() {
 	fmt.Printf("This is a line\n\nthere should have been an empty line above this.\n")
+	fmt.Printf("This       is          a line with   lots\t\t of extra   whitespace!\n")
 	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.Black("  BLK  "), aurora.Red("  RED  "), aurora.Green("  GRN  "), aurora.Yellow("  YLW  "), aurora.Blue("  BLU  "), aurora.Magenta("  MGT  "), aurora.Cyan("  CYA  "), aurora.White("  WHT  "))
 	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.BrightBlack("  BLK  "), aurora.BrightRed("  RED  "), aurora.BrightGreen("  GRN  "), aurora.BrightYellow("  YLW  "), aurora.BrightBlue("  BLU  "), aurora.BrightMagenta("  MGT  "), aurora.BrightCyan("  CYA  "), aurora.BrightWhite("  WHT  "))
 	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.BgBlack("  BLK  "), aurora.BgRed("  RED  "), aurora.BgGreen("  GRN  "), aurora.BgYellow("  YLW  "), aurora.BgBlue("  BLU  "), aurora.BgMagenta("  MGT  "), aurora.BgCyan("  CYA  "), aurora.BgWhite("  WHT  "))
 	fmt.Printf("%s %s %s %s %s %s %s %s\n", aurora.BgBrightBlack("  BLK  "), aurora.BgBrightRed("  RED  "), aurora.BgBrightGreen("  GRN  "), aurora.BgBrightYellow("  YLW  "), aurora.BgBrightBlue("  BLU  "), aurora.BgBrightMagenta("  MGT  "), aurora.BgBrightCyan("  CYA  "), aurora.BgBrightWhite("  WHT  "))
+	errLog.Println("This is an error log")
+	router := http.NewServeMux()
+
+	// print env vars
+	env := ""
+	for _, e := range os.Environ() {
+		if strings.HasSuffix(e, "=") && strings.Count(e, "=") == 1 {
+			continue
+		}
+		env += e + "\n"
+	}
+
+	logger.Debug("Debug log")
+	logger.Info("Info log")
+	logger.Warn("Warning log")
+	logger.Error("Error log")
 
 	fmt.Println("This is a really long line, meant to test out word wrapping for Railway logs. It's actually pretty hard to " +
 		"come up with an example log this long, so it won't be that interesting to read, but that's okay. I hope you enjoyed " +
@@ -100,23 +123,49 @@ func main() {
 		port = "3032"
 	}
 
-	if strings.ToLower(os.Getenv("ENABLE_TICK")) == "true" {
+	var tickTime time.Duration = 0
+	tick := strings.ToLower(os.Getenv("ENABLE_TICK"))
+	if tick == "true" {
+		tickTime = 1000 * time.Millisecond
+	} else if tick != "false" && tick != "0" && tick != "" {
+		millis, err := strconv.Atoi(tick)
+		if err != nil {
+			panic(err)
+		}
+		tickTime = time.Duration(millis) * time.Millisecond
+	}
+	if tickTime > time.Millisecond {
 		go func() {
 			ticks := 0
 			for {
 				ticks++
-				fmt.Printf("This is number %s tick!\n", aurora.Yellow(fmt.Sprintf("%d", ticks)))
-				<-time.Tick(time.Millisecond * 1000)
+
+				//msg := fmt.Sprintf("This is a text tick %s from replica=%s\n", aurora.Yellow(fmt.Sprintf("%d", ticks)), strings.Split(os.Getenv("RAILWAY_REPLICA_ID"), "-")[0])
+				msg, _ := json.Marshal(map[string]interface{}{
+					"severity":  "INFO",
+					"tick":      ticks,
+					"foo":       "hello world",
+					"long":      "This is a really long attribute that should wrap if the screen is fairly narrow. I'm not sure how long it needs to be so here's another long sentence to try and push it over the limit!!!!!!!!!!!!!",
+					"nested":    map[string]string{"nested": "hi"},
+					"number":    123,
+					"array":     []int{1, 2, 3},
+					"message":   "Tricky message attribute",
+					"requestId": "req_123",
+					"msg":       fmt.Sprintf("This is a fancy json tick %s!\n", aurora.Yellow(fmt.Sprintf("%d", ticks))),
+				})
+
+				fmt.Printf("%s\n", msg)
+				<-time.Tick(tickTime)
 			}
 		}()
 	}
 
-	http.HandleFunc("/timeout", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/timeout", func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(120 * time.Second)
 		_, _ = w.Write([]byte("Woke up"))
 	})
 
-	http.HandleFunc("/sleep", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/sleep", func(w http.ResponseWriter, r *http.Request) {
 		seconds, err := strconv.Atoi(r.URL.Query().Get("seconds"))
 		if err != nil {
 			http.Error(w, err.Error(), 400)
@@ -128,19 +177,24 @@ func main() {
 		w.Write([]byte("Slept for " + strconv.Itoa(seconds) + " seconds"))
 	})
 
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	http.HandleFunc("/not-found", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/not-found", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
-	http.HandleFunc("/panic", func(w http.ResponseWriter, r *http.Request) {
-		panic("Silly Billy")
+	router.HandleFunc("/panic", func(w http.ResponseWriter, r *http.Request) {
+		panic("Uh oh, something went wrong!")
 	})
 
-	http.HandleFunc("/_health", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/exit", func(w http.ResponseWriter, r *http.Request) {
+		logger.Error("Exiting app")
+		os.Exit(1)
+	})
+
+	router.HandleFunc("/_health", func(w http.ResponseWriter, r *http.Request) {
 		d := time.Since(startTime)
 		if d < 3*time.Second {
 			time.Sleep(8 * time.Second)
@@ -152,11 +206,11 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/crash", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/crash", func(w http.ResponseWriter, r *http.Request) {
 		os.Exit(1)
 	})
 
-	http.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
 		l := r.URL.Query().Get("log")
 		if l == "" {
 			w.Header().Set("Content-Type", "text/html")
@@ -167,7 +221,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/printlogs", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/printlogs", func(w http.ResponseWriter, r *http.Request) {
 		n, err := strconv.Atoi(r.URL.Query().Get("lines"))
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -183,7 +237,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		status := r.URL.Query().Get("status")
 		s, err := strconv.Atoi(status)
 		if err == nil {
@@ -192,7 +246,7 @@ func main() {
 		_, _ = w.Write([]byte("Status=" + status))
 	})
 
-	http.HandleFunc("/hack", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/hack", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`
 		<h1>Hack</h1>
@@ -216,7 +270,7 @@ document.querySelector('code').innerHTML = await resp.text();
 `))
 	})
 
-	http.HandleFunc("/websocket", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/websocket", func(w http.ResponseWriter, r *http.Request) {
 		// Upgrade our raw HTTP connection to a websocket based one
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -241,7 +295,7 @@ document.querySelector('code').innerHTML = await resp.text();
 		}
 	})
 
-	http.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		e := json.NewEncoder(w)
 		e.SetIndent("", "  ")
@@ -262,7 +316,19 @@ document.querySelector('code').innerHTML = await resp.text();
 		}
 	})
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/csv", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/csv")
+		w.Write([]byte(`a,b,c
+1,2,3
+4,5,6`))
+	})
+
+	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
 		w.WriteHeader(200)
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(w, `<style>
@@ -293,7 +359,7 @@ document.querySelector('code').innerHTML = await resp.text();
 			@media (prefers-color-scheme: dark) {
 				body {
 					color: #ccc;
-				  	background: #222;
+				  	background: #100c1c;
 			  	}
 				a {
 					color: #62d3ff;
@@ -348,13 +414,31 @@ document.querySelector('code').innerHTML = await resp.text();
 		fmt.Fprintf(w, "<p id=\"ws-status\">Pending</p>")
 	})
 
-	if os.Getenv("DISABLE_SERVER") != "true" {
-		fmt.Println("Starting server on port " + port + " at " + time.Now().Format(time.RFC3339))
-		fmt.Printf("PROCESS ARGUMENTS %#v\n", os.Args)
-		log.Fatal(http.ListenAndServe(":"+port, nil))
-	} else {
-		fmt.Println("Running Worker")
+	processType := os.Getenv("PROCESS_TYPE")
+	if processType == "worker" {
+		logger.Info("Running Worker forever")
 		time.Sleep(time.Hour * 1000)
+	} else if processType == "cron" {
+		logger.Info("Running cron job")
+		n := 1000
+		for i := 0; i < n; i++ {
+			logger.Info(fmt.Sprintf("Ticking %d/%d", i, n))
+			time.Sleep(1000 * time.Millisecond)
+		}
+		logger.Info("Cron job ran")
+	} else if processType == "cron-fail" {
+		logger.Info("Running cron job to fail")
+		n := 10
+		for i := 0; i < n; i++ {
+			logger.Info(fmt.Sprintf("Ticking %d/%d", i, n))
+			time.Sleep(time.Second)
+		}
+		logger.Info("Cron job failed")
+		os.Exit(1)
+	} else {
+		loggedRouter := LoggingMiddleware(logger)(router)
+		fmt.Println("Starting server on port " + port + " at " + time.Now().Format(time.RFC3339))
+		log.Fatal(http.ListenAndServe(":"+port, loggedRouter))
 	}
 }
 
@@ -380,4 +464,61 @@ func equalASCIIFold(s, t string) bool {
 		}
 	}
 	return s == t
+}
+
+// responseWriter is a minimal wrapper for http.ResponseWriter that allows the
+// written HTTP status code to be captured for logging.
+type responseWriter struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func wrapResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{ResponseWriter: w}
+}
+
+func (rw *responseWriter) Status() int {
+	return rw.status
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	if rw.wroteHeader {
+		return
+	}
+
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+	rw.wroteHeader = true
+
+	return
+}
+
+// LoggingMiddleware logs the incoming HTTP request & its duration.
+func LoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		fn := func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if err := recover(); err != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					logger.Error(
+						fmt.Sprintf("%s\n%s", err, debug.Stack()),
+					)
+				}
+			}()
+
+			start := time.Now()
+			wrapped := wrapResponseWriter(w)
+			next.ServeHTTP(wrapped, r)
+			logger.Debug(
+				"Request completed to "+r.URL.EscapedPath(),
+				"status", wrapped.status,
+				"method", r.Method,
+				"path", r.URL.EscapedPath(),
+				"duration", time.Since(start),
+			)
+		}
+
+		return http.HandlerFunc(fn)
+	}
 }
