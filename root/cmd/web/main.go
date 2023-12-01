@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -74,7 +75,7 @@ func init() {
 
 	go func() {
 		for range time.Tick(time.Millisecond * 100) {
-			resp, err := httpClientBasic.Get("https://" + domain);
+			resp, err := httpClientBasic.Get("https://" + domain)
 			if err != nil {
 				continue
 			}
@@ -139,29 +140,46 @@ func main() {
 			ticks := 0
 			for {
 				ticks++
+				level := logger.Info
+				r := rand.Float32()
+				if r < 0.3 {
+					level = logger.Warn
+				} else if r < 0.6 {
+					level = logger.Error
+				}
 
-				//msg := fmt.Sprintf("This is a text tick %s from replica=%s\n", aurora.Yellow(fmt.Sprintf("%d", ticks)), strings.Split(os.Getenv("RAILWAY_REPLICA_ID"), "-")[0])
-				msg, _ := json.Marshal(map[string]interface{}{
-					"severity":  "INFO",
-					"tick":      ticks,
-					"foo":       "hello world",
-					"long":      "This is a really long attribute that should wrap if the screen is fairly narrow. I'm not sure how long it needs to be so here's another long sentence to try and push it over the limit!!!!!!!!!!!!!",
-					"nested":    map[string]string{"nested": "hi"},
-					"number":    123,
-					"array":     []int{1, 2, 3},
-					"message":   "Tricky message attribute",
-					"requestId": "req_123",
-					"msg":       fmt.Sprintf("This is a fancy json tick %s!\n", aurora.Yellow(fmt.Sprintf("%d", ticks))),
-				})
-
-				fmt.Printf("%s\n", msg)
+				level(
+					fmt.Sprintf("This is a fancy json tick %s!\n", aurora.Yellow(fmt.Sprintf("%d", ticks))),
+					"tick", ticks,
+					"foo", "hello world",
+					"long", "This is a really long attribute that should wrap if the screen is fairly narrow. I'm not sure how long it needs to be so here's another long sentence to try and push it over the limit!!!!!!!!!!!!!",
+					"nested", map[string]string{
+						"a": "aaa",
+						"b": "bbb",
+						"c": "ccc",
+						"d": "ddd",
+					},
+					"number", 123,
+					"array", []int{1, 2, 3},
+					"messy", []interface{}{1, 2, map[string]interface{}{
+						"dash-key":  "hello!",
+						"space key": "bar",
+						"foo":       "bar",
+						"baz":       []interface{}{1, 2, 3},
+						"further": map[string]interface{}{
+							"super": "nested",
+						},
+					}},
+					"message", "Tricky message attribute",
+					"requestId", "req_123",
+				)
 				<-time.Tick(tickTime)
 			}
 		}()
 	}
 
 	router.HandleFunc("/timeout", func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(120 * time.Second)
+		time.Sleep(10 * time.Minute)
 		_, _ = w.Write([]byte("Woke up"))
 	})
 
