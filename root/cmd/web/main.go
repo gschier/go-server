@@ -27,6 +27,7 @@ var logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 	Level: slog.LevelDebug,
 }))
 
+// bump
 var appAvailableDuration time.Duration = 0
 var startTime = time.Now()
 var deployID = startTime.Format(time.RFC3339)
@@ -534,6 +535,7 @@ func LoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 				"method", r.Method,
 				"path", r.URL.EscapedPath(),
 				"duration", time.Since(start),
+				"host", r.Host,
 			)
 		}
 
