@@ -342,6 +342,62 @@ document.querySelector('code').innerHTML = await resp.text();
 4,5,6`))
 	})
 
+	router.HandleFunc("/gh-hack", func(w http.ResponseWriter, r *http.Request) {
+		client := &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+
+		resp, err := client.Get("https://backboard.railway.app/login/github")
+		if err != nil {
+			fmt.Fprintf(w, "Failed to sent initial request: %s", err)
+			return
+		}
+
+		location, err := resp.Location()
+		if err != nil {
+			fmt.Fprintf(w, "Failed to get location: %s", err)
+			return
+		}
+
+		state := location.Query().Get("state")
+		new_location := strings.ReplaceAll(location.String(), "railway.app", "gosrv.up.railway.app")
+
+		fmt.Printf("GITHUB state=%s loc=%s\n", state, new_location)
+		w.Header().Set("Location", new_location)
+		w.WriteHeader(http.StatusFound)
+	})
+
+	router.HandleFunc("/auth/github", func(w http.ResponseWriter, r *http.Request) {
+		code := r.URL.Query().Get("code")
+		state := r.URL.Query().Get("state")
+		println("GOT CODE", code, state)
+
+		body := strings.NewReader(fmt.Sprintf(`{"code":"%s","state":"%s"}`, code, state))
+		req, err := http.NewRequest(http.MethodPost, "https://backboard.railway.app/login/github", body)
+		if err != nil {
+			fmt.Printf("Failed to create request: %s", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			fmt.Printf("Failed to read resoponse: %s", err)
+			return
+		}
+
+		defer resp.Body.Close()
+		respBody, err := io.ReadAll(resp.Body)
+
+		headerStr := ""
+		for k, v := range resp.Header {
+			headerStr += fmt.Sprintf("<div>%s: %s</div>", k, v)
+		}
+		w.Write([]byte(fmt.Sprintf("<h1>Auth with GitHub</h1><div>Code: %s</div><pre>%s</pre><div>%s</div>", code, respBody, headerStr)))
+	})
+
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			w.WriteHeader(http.StatusNotFound)
